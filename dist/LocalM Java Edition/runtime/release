@@ -1,2 +1,0 @@
-JAVA_VERSION="17.0.18"
-MODULES="java.base java.datatransfer java.xml java.prefs java.desktop java.logging java.net.http jdk.crypto.ec jdk.zipfs"

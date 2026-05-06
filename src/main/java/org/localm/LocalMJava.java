@@ -44,7 +44,8 @@ public class LocalMJava extends JFrame {
     private final JTextField consoleInput = new JTextField();
     private final JTextField serverName = new JTextField("My Server");
     private final JTextField serverPort = new JTextField("25565");
-    private final JComboBox<Object> ramBox = new JComboBox<>();
+    private final JSlider ramSlider = new JSlider(JSlider.HORIZONTAL, 1024, getSystemRamMb(), 4096);
+    private final JLabel ramLabel = new JLabel("4096 MB");
     private final JCheckBox autoBackup = new JCheckBox("Auto-backup on stop");
     private final JLabel status = new JLabel("Ready");
     private final JTextField roomCode = new JTextField();
@@ -148,7 +149,21 @@ public class LocalMJava extends JFrame {
                         startServerCli(name);
                     }
                     case "--stop" -> {
-                        System.out.println("Note: CLI stop is not yet persistent across processes. Use Ctrl+C or 'stop' in console if available.");
+                        if (args.length < 2) throw new IllegalArgumentException("Usage: --stop <server-name>");
+                        String name = args[1];
+                        try (Socket s = new Socket("127.0.0.1", 42851);
+                             PrintWriter out = new PrintWriter(new OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8), true);
+                             BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8))) {
+                            out.println("STOP " + name);
+                            String response = in.readLine();
+                            if ("OK".equals(response)) {
+                                System.out.println("Stop command sent to " + name + " via GUI.");
+                            } else {
+                                System.out.println("Server " + name + " is not running or GUI rejected stop.");
+                            }
+                        } catch (IOException ex) {
+                            System.out.println("Could not connect to GUI. Is the VoxelPort GUI running?");
+                        }
                     }
                     default -> System.out.println("Unknown command. Available: --list, --start <name>");
                 }
@@ -232,12 +247,10 @@ public class LocalMJava extends JFrame {
         roomCode.setEditable(false);
         joinAddress.setEditable(false);
 
-        ramBox.setEditable(true);
-        ramBox.addItem(new RamPreset("2 GB", 2048));
-        ramBox.addItem(new RamPreset("4 GB", 4096));
-        ramBox.addItem(new RamPreset("6 GB", 6144));
-        ramBox.addItem(new RamPreset("8 GB", 8192));
-        ramBox.setSelectedIndex(1);
+        ramSlider.setMajorTickSpacing(2048);
+        ramSlider.setPaintTicks(true);
+        ramSlider.setSnapToTicks(true);
+        ramSlider.addChangeListener(e -> ramLabel.setText(ramSlider.getValue() + " MB"));
         roomCode.setEditable(false);
 
         setContentPane(buildUi());
@@ -251,6 +264,38 @@ public class LocalMJava extends JFrame {
                 stopJoinProxy();
             }
         });
+        
+        startCliListener();
+    }
+
+    private void startCliListener() {
+        Thread t = new Thread(() -> {
+            try (ServerSocket server = new ServerSocket(42851, 50, InetAddress.getByName("127.0.0.1"))) {
+                while (!Thread.currentThread().isInterrupted()) {
+                    try (Socket s = server.accept();
+                         BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
+                         PrintWriter out = new PrintWriter(new OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8), true)) {
+                        
+                        String line = in.readLine();
+                        if (line != null && line.startsWith("STOP ")) {
+                            String name = line.substring(5).trim();
+                            if (processManager.isAlive(name)) {
+                                stopServerByName(name);
+                                out.println("OK");
+                            } else {
+                                out.println("NOT_RUNNING");
+                            }
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            } catch (IOException e) {
+                // Ignore port binding issues
+            }
+        });
+        t.setDaemon(true);
+        t.start();
     }
 
     private JComponent buildUi() {
@@ -304,7 +349,12 @@ public class LocalMJava extends JFrame {
         
         config.add(formRow("Name", serverName));
         config.add(formRow("Version", versionBox));
-        config.add(formRow("RAM Allocation (MB)", ramBox));
+        
+        JPanel ramPanel = new JPanel(new BorderLayout(5, 5));
+        ramPanel.add(ramSlider, BorderLayout.CENTER);
+        ramPanel.add(ramLabel, BorderLayout.EAST);
+        config.add(formRow("RAM Allocation", ramPanel));
+        
         config.add(formRow("Server Port", serverPort));
         config.add(formRow("Options", autoBackup));
         
@@ -806,14 +856,15 @@ public class LocalMJava extends JFrame {
     }
 
     private int getSelectedRam() {
-        Object item = ramBox.getSelectedItem();
-        if (item instanceof RamPreset preset) return preset.mb();
-        if (item == null) return 4096;
+        return ramSlider.getValue();
+    }
+    
+    private int getSystemRamMb() {
         try {
-            String val = item.toString().replaceAll("[^0-9]", "");
-            return Integer.parseInt(val);
+            com.sun.management.OperatingSystemMXBean osBean = (com.sun.management.OperatingSystemMXBean) java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+            return (int) (osBean.getTotalMemorySize() / 1024 / 1024);
         } catch (Exception e) {
-            return 4096;
+            return 16384;
         }
     }
 
@@ -1067,19 +1118,10 @@ public class LocalMJava extends JFrame {
         console.setDocument(consoleDocs.computeIfAbsent(name, k -> new DefaultStyledDocument()));
 
         String ramStr = store.getProperty(name + ".ram", "4096");
-        int ram = Integer.parseInt(ramStr);
-        boolean found = false;
-        for (int i = 0; i < ramBox.getItemCount(); i++) {
-            Object item = ramBox.getItemAt(i);
-            if (item instanceof RamPreset preset && preset.mb() == ram) {
-                ramBox.setSelectedIndex(i);
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            ramBox.setSelectedItem(ramStr);
-        }
+        try {
+            int ram = Integer.parseInt(ramStr);
+            ramSlider.setValue(ram);
+        } catch (Exception ignored) {}
     }
 
     private String selectedServer() {

@@ -105,14 +105,43 @@ public class ServerProcessManager {
         Process p = activeServers.get(name);
         if (p == null || !p.isAlive()) return "";
 
+        long pid = p.pid();
+        try {
+            String osName = System.getProperty("os.name").toLowerCase(Locale.ROOT);
+            if (osName.contains("win")) {
+                ProcessBuilder pb = new ProcessBuilder("tasklist", "/FI", "PID eq " + pid, "/FO", "CSV", "/NH");
+                Process tp = pb.start();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(tp.getInputStream()))) {
+                    String line = reader.readLine();
+                    if (line != null && !line.isEmpty()) {
+                        String[] parts = line.split("\",\"");
+                        if (parts.length >= 5) {
+                            String ram = parts[4].replace("\"", "").replace("K", "").replace(",", "").replace(".", "").trim();
+                            long ramBytes = Long.parseLong(ram) * 1024;
+                            return String.format("%.1f MB RAM", ramBytes / 1024.0 / 1024.0);
+                        }
+                    }
+                }
+            } else {
+                ProcessBuilder pb = new ProcessBuilder("ps", "-p", String.valueOf(pid), "-o", "pmem,rss");
+                Process tp = pb.start();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(tp.getInputStream()))) {
+                    reader.readLine(); // skip header
+                    String line = reader.readLine();
+                    if (line != null && !line.trim().isEmpty()) {
+                        String[] parts = line.trim().split("\\s+");
+                        if (parts.length >= 2) {
+                            long rssKB = Long.parseLong(parts[1]);
+                            return String.format("%.1f MB RAM", rssKB / 1024.0);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // Fallback to CPU average
         try {
             ProcessHandle.Info info = p.toHandle().info();
-            // Note: ProcessHandle doesn't give precise RAM/CPU easily in pure Java without JNA/OS-specific calls
-            // But we can get CPU duration. For RAM, we'll have to use a workaround or stick to CPU for now.
-            // Actually, ProcessHandle.info().totalCpuDuration() is available.
-            
-            // To keep it dependency-free and simple, we use ProcessHandle only.
-            
             Optional<Instant> start = info.startInstant();
             Optional<java.time.Duration> cpu = info.totalCpuDuration();
             
@@ -120,8 +149,6 @@ public class ServerProcessManager {
                 long cpuMillis = cpu.get().toMillis();
                 long uptimeMillis = Instant.now().toEpochMilli() - start.get().toEpochMilli();
                 double cpuUsage = (double) cpuMillis / uptimeMillis * 100.0;
-                // This is an average since start, not real-time. 
-                // For real-time we'd need to sample twice.
                 return String.format("%.1f%% CPU", cpuUsage);
             }
         } catch (Exception ignored) {}
@@ -151,11 +178,9 @@ public class ServerProcessManager {
     public String detectJava(String mcVersion) {
         int required = requiredJava(mcVersion);
         String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (!osName.contains("win")) {
-            throw new IllegalStateException("VoxelPort first release is Windows-only.");
-        }
+        
         List<String> candidates = new ArrayList<>();
-        String bin = "java.exe";
+        String bin = osName.contains("win") ? "java.exe" : "java";
 
         candidates.add(bin);
         String javaHome = System.getenv("JAVA_HOME");
@@ -169,7 +194,10 @@ public class ServerProcessManager {
         if (Files.exists(managedRoot)) {
             try (var stream = Files.list(managedRoot)) {
                 stream.filter(Files::isDirectory).forEach(dir -> {
-                    Path javaBin = dir.resolve("bin").resolve("java.exe");
+                    Path javaBin = dir.resolve("bin").resolve(bin);
+                    if (!Files.exists(javaBin) && dir.resolve("Contents").resolve("Home").resolve("bin").resolve(bin).toFile().exists()) {
+                        javaBin = dir.resolve("Contents").resolve("Home").resolve("bin").resolve(bin); // Mac OS jdk structure
+                    }
                     if (Files.exists(javaBin)) {
                         candidates.add(javaBin.toString());
                     }
@@ -194,35 +222,59 @@ public class ServerProcessManager {
     private Path ensureManagedJava(int requiredMajor) {
         if (requiredMajor <= 0) return null;
         try {
+            String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+            String binName = osName.contains("win") ? "java.exe" : "java";
+            
             Path javaRoot = toolsDir.resolve("java");
             Files.createDirectories(javaRoot);
             Path targetDir = javaRoot.resolve("temurin-" + requiredMajor);
-            Path javaExe = targetDir.resolve("bin").resolve("java.exe");
+            Path javaExe = targetDir.resolve("bin").resolve(binName);
+            
+            // Check Mac OS X specific java structure inside temurin
+            if (!Files.exists(javaExe)) {
+                javaExe = targetDir.resolve("Contents").resolve("Home").resolve("bin").resolve(binName);
+            }
             if (Files.exists(javaExe)) return javaExe;
 
-            Path zip = Files.createTempFile("voxelport-java-", ".zip");
+            String os = "windows";
+            String ext = ".zip";
+            if (osName.contains("mac")) {
+                os = "mac";
+                ext = ".tar.gz";
+            } else if (osName.contains("linux")) {
+                os = "linux";
+                ext = ".tar.gz";
+            }
+            
+            String arch = System.getProperty("os.arch").toLowerCase(Locale.ROOT);
+            String adoptArch = "x64";
+            if (arch.contains("aarch64") || arch.contains("arm64")) {
+                adoptArch = "aarch64";
+            }
+
+            Path archive = Files.createTempFile("voxelport-java-", ext);
             try {
                 String url = "https://api.adoptium.net/v3/binary/latest/" + requiredMajor
-                        + "/ga/windows/x64/jre/hotspot/normal/eclipse";
+                        + "/ga/" + os + "/" + adoptArch + "/jre/hotspot/normal/eclipse";
                 HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                         .header("User-Agent", "VoxelPort/1.0.0")
                         .build();
-                HttpResponse<Path> res = http.send(req, HttpResponse.BodyHandlers.ofFile(zip));
+                HttpResponse<Path> res = http.send(req, HttpResponse.BodyHandlers.ofFile(archive));
                 if (res.statusCode() < 200 || res.statusCode() >= 300) {
                     throw new IOException("Java download failed with HTTP " + res.statusCode());
                 }
-                unzip(zip, javaRoot);
+                extractArchive(archive, javaRoot, ext);
             } finally {
-                Files.deleteIfExists(zip);
+                Files.deleteIfExists(archive);
             }
 
-            // Adoptium zips extract into versioned folder. Normalize it to temurin-{major}.
+            // Adoptium archives extract into versioned folder. Normalize it to temurin-{major}.
             if (!Files.exists(javaExe)) {
                 try (var stream = Files.list(javaRoot)) {
                     Path extracted = stream
                             .filter(Files::isDirectory)
                             .filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).contains(String.valueOf(requiredMajor)))
-                            .filter(p -> Files.exists(p.resolve("bin").resolve("java.exe")))
+                            .filter(p -> Files.exists(p.resolve("bin").resolve(binName)) || Files.exists(p.resolve("Contents").resolve("Home").resolve("bin").resolve(binName)))
                             .findFirst()
                             .orElse(null);
                     if (extracted != null && !extracted.equals(targetDir)) {
@@ -230,6 +282,15 @@ public class ServerProcessManager {
                             deleteDirectory(targetDir);
                         }
                         Files.move(extracted, targetDir);
+                        
+                        // Re-evaluate javaExe path
+                        javaExe = targetDir.resolve("bin").resolve(binName);
+                        if (!Files.exists(javaExe)) {
+                            javaExe = targetDir.resolve("Contents").resolve("Home").resolve("bin").resolve(binName);
+                        }
+                        if (Files.exists(javaExe) && !osName.contains("win")) {
+                            javaExe.toFile().setExecutable(true);
+                        }
                     }
                 }
             }
@@ -239,8 +300,23 @@ public class ServerProcessManager {
         }
     }
 
-    private void unzip(Path zipFile, Path destinationDir) throws IOException {
-        try (var zipIn = new java.util.zip.ZipInputStream(Files.newInputStream(zipFile))) {
+    private void extractArchive(Path archive, Path destinationDir, String ext) throws IOException {
+        if (ext.equals(".tar.gz")) {
+            try {
+                Process p = new ProcessBuilder("tar", "-xzf", archive.toAbsolutePath().toString(), "-C", destinationDir.toAbsolutePath().toString())
+                        .inheritIO()
+                        .start();
+                if (p.waitFor() != 0) {
+                    throw new IOException("tar command failed to extract " + archive);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("tar extraction interrupted", e);
+            }
+            return;
+        }
+        
+        try (var zipIn = new java.util.zip.ZipInputStream(Files.newInputStream(archive))) {
             java.util.zip.ZipEntry entry;
             while ((entry = zipIn.getNextEntry()) != null) {
                 Path resolved = destinationDir.resolve(entry.getName()).normalize();

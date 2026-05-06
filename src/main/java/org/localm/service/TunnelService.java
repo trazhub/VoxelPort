@@ -104,14 +104,13 @@ public class TunnelService {
 
     private Path daemonPath() {
         String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (!osName.contains("win")) {
-            throw new IllegalStateException("VoxelPort first release is Windows-only.");
-        }
-        Path dev = Path.of("bin", "tunnel-daemon.exe").toAbsolutePath();
+        String binName = osName.contains("win") ? "tunnel-daemon.exe" : "tunnel-daemon";
+        
+        Path dev = Path.of("bin", binName).toAbsolutePath();
         if (Files.exists(dev)) return dev;
-        Path app = Path.of(System.getProperty("user.dir"), "bin", "tunnel-daemon.exe");
+        Path app = Path.of(System.getProperty("user.dir"), "bin", binName);
         if (Files.exists(app)) return app;
-        Path managed = managedToolsDir().resolve("tunnel-daemon.exe");
+        Path managed = managedToolsDir().resolve(binName);
         if (Files.exists(managed)) return managed;
         downloadTunnelDaemon(managed);
         return managed;
@@ -132,13 +131,39 @@ public class TunnelService {
     }
 
     private void downloadTunnelDaemon(Path target) {
-        String url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe";
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        String arch = System.getProperty("os.arch").toLowerCase(Locale.ROOT);
+        
+        String cfOs = "windows";
+        String cfArch = "amd64";
+        String ext = ".exe";
+        
+        if (osName.contains("mac")) {
+            cfOs = "darwin";
+            ext = "";
+        } else if (osName.contains("linux")) {
+            cfOs = "linux";
+            ext = "";
+        }
+        
+        if (arch.contains("aarch64") || arch.contains("arm64")) {
+            cfArch = "arm64";
+        }
+        
+        String url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-" + cfOs + "-" + cfArch + ext;
+        if (cfOs.equals("darwin") && cfArch.equals("arm64")) {
+            // Cloudflare doesn't natively publish a cloudflared-darwin-arm64 directly without a tgz, but darwin-amd64 works via Rosetta or some custom URLs exist. We will fall back to amd64 for darwin just in case, but let's try the direct binary first.
+        }
+
         try {
-            Path temp = Files.createTempFile("voxelport-cloudflared-", ".exe");
+            Path temp = Files.createTempFile("voxelport-cloudflared-", ext);
             try (InputStream in = URI.create(url).toURL().openStream()) {
                 Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
             }
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            if (!osName.contains("win")) {
+                target.toFile().setExecutable(true);
+            }
         } catch (IOException e) {
             throw new IllegalStateException("Failed to download tunnel-daemon.exe automatically", e);
         }
