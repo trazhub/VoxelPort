@@ -1,82 +1,157 @@
-<div align="center">
-  <h1>⛏️ VoxelPort</h1>
-  <p><strong>A standalone, lightweight Java Minecraft server manager for Windows.</strong></p>
+# VoxelPort
 
-  [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)]()
-  [![Platform](https://img.shields.io/badge/platform-Windows-0078d7.svg)]()
-  [![Java](https://img.shields.io/badge/java-8%20|%2017%20|%2021-orange.svg)]()
-  [![Sponsor](https://img.shields.io/badge/Sponsor-💖-ff69b4.svg)](https://github.com/sponsors/trazhub)
+VoxelPort is an Electron + React desktop application for creating, running, managing, and sharing Minecraft Java servers through relay room codes.
 
-  *Manage your servers, backups, plugins, and Cloudflare tunnels in one place.*
-</div>
+## Features
 
----
+- Install Paper, Purpur, Vanilla, Fabric, Forge, and NeoForge servers
+- Start and stop servers, view console output, send commands, and inspect runtime stats
+- Browse and install mods/plugins from Modrinth and Hangar
+- Create relay rooms and let others join via 6-character room codes
+- Manage installed mods/plugins and check for updates
 
-## ✨ Features
+## Relay Server
 
-- **Server Installation:** Automatically download and set up Paper, Purpur, Fabric, or Forge Minecraft servers.
-- **Java Management:** Automatically detects and manages the correct Java runtime (Java 8, 17, or 21) based on the server version.
-- **Modrinth Integration:** Search and install plugins and mods directly from Modrinth within the UI.
-- **Cloudflare Tunnels:** Instantly start a secure Cloudflare tunnel to share a room code with friends—no router port-forwarding required.
-- **Live Console:** View server logs in real-time and execute commands.
-- **Backups:** Create full server or world-only zip backups with a single click.
-- **Portable:** No heavy dependencies; built with Swing and FlatLaf.
+VoxelPort does not assume a public relay anymore. Set your own relay URL in Settings, for example:
 
----
+`wss://your-relay.example.com`
 
-## 🚀 Installation & Usage
+If you enter only the host, VoxelPort automatically uses the `/relay` WebSocket path.
 
-VoxelPort is currently supported on **Windows only** for v1.0.0.
+## Expected Latency
 
-### Download
+Latency depends on where your VPS is hosted relative to both the host machine and players.
+For the host machine, Ethernet is strongly recommended over WiFi.
 
-Grab the latest release executable from the [Releases page](../../releases) and simply run `VoxelPort.exe`.
+## Development Setup
 
-### Hosting a Server
-1. Click **+ Install New Server** and select your desired server software and version.
-2. Adjust the **RAM Allocation** using the slider.
-3. Click **▶ Start Server** to launch the server instance.
+1. Install dependencies:
 
-### Joining a Server via Tunnel
-1. If your friend is hosting using VoxelPort's Cloudflare tunnel, go to the **Join Room** tab.
-2. Enter the Room Code they provided and click **Connect**.
-3. Launch Minecraft and connect to `localhost:25565`.
-
----
-
-## 🛠️ Build From Source
-
-VoxelPort uses a dependency-free build process with simple PowerShell scripts. No Maven or Gradle required!
-
-### Prerequisites
-- JDK 21+
-- Windows (PowerShell)
-
-### Run for Development
-```powershell
-.\run.ps1
+```bash
+npm install
 ```
 
-### Build Executable Image
-Builds a self-contained Windows application image with a runnable `.exe`.
-```powershell
-.\build.ps1
+2. Start the relay server locally in one terminal:
+
+```bash
+npm run relay:dev
 ```
 
-**Output:**
+3. Start the desktop app in another terminal:
+
+```bash
+npm run dev
+```
+
+## Build for Production
+
+```bash
+npm run build
+```
+
+Build artifacts are written to `dist-electron/`.
+
+## Relay Server Deployment
+
+### Docker
+
+```bash
+cd relay-server
+docker build -t minecraft-relay .
+docker run -d --name minecraft-relay -p 4000:4000 minecraft-relay
+```
+
+### Manual Node.js
+
+```bash
+cd relay-server
+node index.js
+```
+
+The relay listens on TCP port `4000`.
+
+## Self-Hosting the Relay
+
+Run the relay server on a VPS near your players:
+
+1. Deploy the contents of `relay-server/` on a VPS near your players.
+2. Expose TCP port `4000` behind HTTPS/WSS using a reverse proxy such as Nginx or Caddy.
+3. Point VoxelPort Settings to your relay URL, for example:
+
 ```text
-dist\VoxelPort\VoxelPort.exe
+wss://your-relay.example.com
 ```
 
----
+4. Use a valid TLS certificate for public relays.
 
-## 💖 Support the Project
+## Security Fixes Applied
 
-If you find VoxelPort useful, consider supporting the development!
+- Path traversal protection for mod/plugin install filenames
+- Path traversal validation for mod removal paths
+- External URL validation in `open-external`
+- Strict validation and sanitization for `add-server` IPC input
+- Server port validation before relay room creation
+- NeoForge host whitelist entries added for installer and mod manager
 
-[![Sponsor trazhub](https://img.shields.io/badge/Sponsor_trazhub-💖-ff69b4.svg?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/trazhub)
+## How to Add and Start a Server
 
----
-<div align="center">
-  <sub>Built with 💚 and dirt blocks by <a href="https://github.com/trazhub">trazhub</a></sub>
-</div>
+1. Open **Install Server** in the sidebar.
+2. Choose a server type and version.
+3. Configure name, path, port, RAM, and EULA acceptance.
+4. Complete install.
+5. In **Servers**, click **Start**.
+
+## How to Install Mods and Plugins
+
+1. Open **Mods & Plugins**.
+2. Select a server.
+3. Use the **Browse** tab to search and install.
+4. Use the **Installed** tab to update or remove entries.
+
+## How to Create and Join Rooms
+
+### Create Room
+
+1. Start the server.
+2. On the server card, click **Share Room**.
+3. Share the 6-character room code.
+
+### Join Room
+
+1. Open **Join Room**.
+2. Enter the room code.
+3. After success, connect in Minecraft to:
+
+`localhost:25565`
+
+## Known Limitations
+
+- Public relay performance depends on your VPS location and the host machine network quality
+
+## Troubleshooting
+
+### Java not found
+
+- Use **Settings -> Auto-detect Java**
+- Install Java from `https://adoptium.net`
+
+### Room not found or relay unreachable
+
+- Verify the relay URL in Settings
+- Verify your VPS reverse proxy and relay process are up
+- Confirm the room code is exactly 6 uppercase alphanumeric characters
+
+### Port in use
+
+- The installer can suggest the next free port
+- Change the port in the install configuration
+
+### Forge or NeoForge install fails
+
+- Check installer output in Install Step 4
+- Validate selected build/version and Java compatibility
+
+### Mod install fails
+
+- Verify source and compatibility
+- Retry; partial downloads are cleaned automatically

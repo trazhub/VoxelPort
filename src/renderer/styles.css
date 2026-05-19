@@ -1,0 +1,175 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Pixelify+Sans:wght@400;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #f0f4f8;
+  background: #0a0c10;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: #0a0c10;
+  color: #f0f4f8;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Reset html/body overflow ────────────────────── */
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ─── Custom scrollbar — global ───────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2f3a #111318;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #111318;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #2a2f3a 0%, #1d2129 100%);
+  border-radius: 3px;
+  border: 1px solid #1d2129;
+  transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #4ade80 0%, #22c55e 100%);
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
+}
+::-webkit-scrollbar-corner {
+  background: #111318;
+}
+
+/* ─── Electron drag regions ───────────────────────── */
+.titlebar {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.titlebar button,
+.titlebar a,
+.titlebar [data-no-drag] {
+  -webkit-app-region: no-drag;
+}
+
+/* ─── Selection highlight ─────────────────────────── */
+::selection { background: rgba(74,222,128,0.25); color: #f0f4f8; }
+
+/* ─── Form inputs global ──────────────────────────── */
+input, select, textarea {
+  color-scheme: dark;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus {
+  box-shadow: 0 0 0 2px rgba(74,222,128,0.35);
+}
+
+/* ─── Range slider accent ─────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: #2a2f3a;
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 14px rgba(74, 222, 128, 0.8);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: #4ade80;
+  cursor: pointer;
+  border: none;
+}
+
+/* ─── Disabled buttons ────────────────────────────── */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ─── Pixel-art dot texture overlay on panels ──────── */
+.pixel-bg {
+  background-image:
+    radial-gradient(rgba(74,222,128,0.025) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* ─── Grass-block left border on active sidebar items ─ */
+.nav-active-bar {
+  position: relative;
+}
+.nav-active-bar::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 60%;
+  background: #4ade80;
+  border-radius: 0 2px 2px 0;
+}
+
+/* ─── Console ANSI-style text coloring ─────────────── */
+.console-warn  { color: #fbbf24; }
+.console-error { color: #ef4444; }
+.console-info  { color: #38bdf8; }
+.console-ok    { color: #4ade80; }
+
+/* ─── Smooth page transitions ─────────────────────── */
+main > * {
+  animation: pageIn 0.18s ease-out both;
+}
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Progress bar shimmer ────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(0);
+  }
+}
+
+.toast-slide-in {
+  animation: toastSlideIn 0.18s ease-out both;
+}

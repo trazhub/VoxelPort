@@ -1,0 +1,21 @@
+appId: com.voxelport.app
+productName: "VoxelPort"
+artifactName: "${productName}-${version}.${ext}"
+directories:
+  output: dist-electron
+files:
+  - src/**/*
+  - dist/**/*
+  - package.json
+win:
+  target: nsis
+  icon: assets/icon.ico
+  requestedExecutionLevel: asInvoker
+mac:
+  target: dmg
+  icon: assets/icon.icns
+linux:
+  target: AppImage
+  icon: assets/icon.png
+publish:
+  provider: github
